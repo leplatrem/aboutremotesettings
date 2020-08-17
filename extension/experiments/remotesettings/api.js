@@ -9,6 +9,7 @@ const { EventManager } = ExtensionCommon;
 const { ExtensionError } = ExtensionUtils;
 
 const SERVER_LOCAL = "http://localhost:8888/v1";
+const SERVER_DEV = "https://kinto.dev.mozaws.net/v1";
 const SERVER_PROD = "https://firefox.settings.services.mozilla.com/v1";
 const SERVER_STAGE = "https://settings.stage.mozaws.net/v1";
 const HASH_PROD =
@@ -25,7 +26,9 @@ async function getState() {
 
   const { serverURL, mainBucket } = inspected;
   let environment = "custom";
-  if (serverURL == SERVER_PROD) {
+  if (serverURL == SERVER_DEV) {
+    environment = "dev";
+  } else if (serverURL == SERVER_PROD) {
     environment = "prod";
   } else if (serverURL == SERVER_STAGE) {
     environment = "stage";
@@ -106,6 +109,8 @@ var remotesettings = class extends ExtensionAPI {
               );
               Services.prefs.clearUserPref("dom.push.serverURL");
               Services.prefs.clearUserPref("services.settings.load_dump");
+              await this.verifySignature(true);
+
             } else if (env.includes("stage")) {
               Services.prefs.setCharPref(
                 "services.settings.server",
@@ -118,6 +123,16 @@ var remotesettings = class extends ExtensionAPI {
               Services.prefs.setCharPref("dom.push.serverURL", MEGAPHONE_STAGE);
               // We don't want to load dumps for stage since the datasets don't always overlap.
               Services.prefs.setBoolPref("services.settings.load_dump", false);
+              await this.verifySignature(true);
+
+            } else if (env.includes("dev")) {
+              Services.prefs.setCharPref(
+                "services.settings.server",
+                SERVER_DEV,
+              );
+              Services.prefs.setBoolPref("services.settings.load_dump", false);
+              await this.verifySignature(false);
+
             } else if (env.includes("local")) {
               Services.prefs.setCharPref(
                 "services.settings.server",
@@ -129,6 +144,7 @@ var remotesettings = class extends ExtensionAPI {
               );
               Services.prefs.clearUserPref("dom.push.serverURL");
               Services.prefs.setBoolPref("services.settings.load_dump", false);
+              await this.verifySignature(true);
             }
 
             if (env.includes("-preview")) {
@@ -214,6 +230,17 @@ var remotesettings = class extends ExtensionAPI {
               refreshUI();
             } catch (e) {
               reportError(e);
+            }
+          },
+
+          /**
+           * Enable or disable the signature verification on clients.
+           */
+          async verifySignature(enabled) {
+            const { collections } = await RemoteSettings.inspect();
+            for (const { collection } of collections) {
+              const client = RemoteSettings(collection);
+              client.verifySignature = enabled;
             }
           },
 
